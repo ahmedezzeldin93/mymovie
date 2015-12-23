@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">My Movie</string>
+    <string name="api_key">c4fa644256c804192d8196983b692da0</string>
+    <string name="action_sort_by">Sort by</string>
+    <string name="action_sort_by_popularity">Popularity</string>
+    <string name="action_sort_by_rating">Rating</string>
 </resources>
