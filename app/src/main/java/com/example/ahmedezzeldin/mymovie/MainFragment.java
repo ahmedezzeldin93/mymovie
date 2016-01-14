@@ -1,6 +1,9 @@
 package com.example.ahmedezzeldin.mymovie;
 
-import android.content.Intent;
+import android.content.Context;
+import android.database.Cursor;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -13,6 +16,10 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.GridView;
+
+import com.example.ahmedezzeldin.mymovie.adapters.MovieGridAdapter;
+import com.example.ahmedezzeldin.mymovie.data.MovieContract;
+import com.example.ahmedezzeldin.mymovie.model.Movie;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -32,64 +39,186 @@ import java.util.List;
  */
 public class MainFragment extends android.support.v4.app.Fragment {
 
-    private com.example.ahmedezzeldin.mymovie.MovieGridAdapter movieGridAdapter;
+    public static final String TAG = MainFragment.class.getSimpleName();
 
+    private GridView mGridView;
+
+    private MovieGridAdapter movieGridAdapter;
+
+    private static final String SORT_SETTING_KEY = "sort_setting";
     private static final String POPULARITY_DESC = "popularity.desc";
     private static final String RATING_DESC = "vote_average.desc";
+    private static final String FAVORITE = "favorite";
+    private static final String MOVIES_KEY = "movies";
+
+    public static final int COL_ID = 0;
+    public static final int COL_MOVIE_ID = 1;
+    public static final int COL_TITLE = 2;
+    public static final int COL_IMAGE = 3;
+    public static final int COL_IMAGE2 = 4;
+    public static final int COL_OVERVIEW = 5;
+    public static final int COL_RATING = 6;
+    public static final int COL_DATE = 7;
+
+    private String mSortBy = POPULARITY_DESC;
+
+    private ArrayList<Movie> mMovies = null;
+
+    private static final String[] MOVIE_COLUMNS = {
+            MovieContract.MovieEntry._ID,
+            MovieContract.MovieEntry.COLUMN_MOVIE_ID,
+            MovieContract.MovieEntry.COLUMN_TITLE,
+            MovieContract.MovieEntry.COLUMN_POSTER,
+            MovieContract.MovieEntry.COLUMN_IMAGE,
+            MovieContract.MovieEntry.COLUMN_OVERVIEW,
+            MovieContract.MovieEntry.COLUMN_RATING,
+            MovieContract.MovieEntry.COLUMN_DATE
+    };
+
+    public onMovieItemSelectedListener mCallback;
+
+
+    public MainFragment() {
+    }
+
+    public interface onMovieItemSelectedListener {
+        void onItemSelected(Movie movie);
+    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setHasOptionsMenu(true);
-        movieGridAdapter = new com.example.ahmedezzeldin.mymovie.MovieGridAdapter(getContext(),new ArrayList());
-        new FetchMoviesTask().execute(POPULARITY_DESC);
+    }
+
+    @Override
+    public void onAttach(Context context) {
+        super.onAttach(context);
+        try{
+            mCallback = (onMovieItemSelectedListener) context;
+        }catch (ClassCastException e){
+               e.printStackTrace();
+        }
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
-        GridView gridview = (GridView) rootView.findViewById(R.id.movies_grid);
-        gridview.setAdapter(movieGridAdapter);
-        gridview.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        mGridView = (GridView) rootView.findViewById(R.id.movies_grid);
+        movieGridAdapter = new MovieGridAdapter(getActivity(), new ArrayList<Movie>());
+
+
+        mGridView.setAdapter(movieGridAdapter);
+
+        mGridView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                Movie movieClicked = movieGridAdapter.getItem(position);
-                Intent intent = new Intent(getContext(),DetailActivity.class);
-                Bundle extras = new Bundle();
-                extras.putString("title",movieClicked.getTitle());
-                extras.putString("date",movieClicked.getDate());
-                extras.putString("overview",movieClicked.getOverview());
-                extras.putString("backdrop",movieClicked.getBackdrop());
-                extras.putString("rating", Double.toString(movieClicked.getVoteAverage()));
-                intent.putExtras(extras);
-                startActivity(intent);
+                Movie movie = movieGridAdapter.getItem(position);
+                mCallback.onItemSelected(movie);
             }
         });
+
+        if (savedInstanceState != null) {
+            if (savedInstanceState.containsKey(SORT_SETTING_KEY)) {
+                mSortBy = savedInstanceState.getString(SORT_SETTING_KEY);
+            }
+
+            if (savedInstanceState.containsKey(MOVIES_KEY)) {
+                mMovies = savedInstanceState.getParcelableArrayList(MOVIES_KEY);
+                movieGridAdapter.setData(mMovies);
+            } else {
+                updateMovies(mSortBy);
+            }
+        } else {
+            if(!isNetworkAvailable()){
+                mSortBy=FAVORITE;
+            }
+            updateMovies(mSortBy);
+        }
         return rootView;
     }
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
         inflater.inflate(R.menu.menu_fragment_main, menu);
-        super.onCreateOptionsMenu(menu, inflater);
+        MenuItem action_sort_by_popularity = menu.findItem(R.id.action_sort_by_popularity);
+        MenuItem action_sort_by_rating = menu.findItem(R.id.action_sort_by_rating);
+        MenuItem action_sort_by_favorite = menu.findItem(R.id.action_sort_by_favorite);
+
+        if (mSortBy.contentEquals(POPULARITY_DESC)) {
+            if (!action_sort_by_popularity.isChecked()) {
+                action_sort_by_popularity.setChecked(true);
+            }
+        } else if (mSortBy.contentEquals(RATING_DESC)) {
+            if (!action_sort_by_rating.isChecked()) {
+                action_sort_by_rating.setChecked(true);
+            }
+        } else if (mSortBy.contentEquals(FAVORITE)) {
+            if (!action_sort_by_popularity.isChecked()) {
+                action_sort_by_favorite.setChecked(true);
+            }
+        }
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
             case R.id.action_sort_by_popularity:
-                new FetchMoviesTask().execute(POPULARITY_DESC);
+                if (item.isChecked()) {
+                    item.setChecked(false);
+                } else {
+                    item.setChecked(true);
+                }
+                mSortBy = POPULARITY_DESC;
+                updateMovies(mSortBy);
                 return true;
             case R.id.action_sort_by_rating:
-                new FetchMoviesTask().execute(RATING_DESC);
+                if (item.isChecked()) {
+                    item.setChecked(false);
+                } else {
+                    item.setChecked(true);
+                }
+                mSortBy = RATING_DESC;
+                updateMovies(mSortBy);
+                return true;
+            case R.id.action_sort_by_favorite:
+                if (item.isChecked()) {
+                    item.setChecked(false);
+                } else {
+                    item.setChecked(true);
+                }
+                mSortBy = FAVORITE;
+                updateMovies(mSortBy);
                 return true;
             default:
                 return super.onOptionsItemSelected(item);
         }
     }
 
-    public void updateAdapter(List<Movie> moviesList){
-        movieGridAdapter.setData(moviesList);
+    private void updateMovies(String sort_by) {
+        if (!sort_by.contentEquals(FAVORITE)) {
+            new FetchMoviesTask().execute(sort_by);
+        } else {
+            new FetchFavoriteMoviesTask(getActivity()).execute();
+        }
+    }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        if (!mSortBy.contentEquals(POPULARITY_DESC)) {
+            outState.putString(SORT_SETTING_KEY, mSortBy);
+        }
+        if (mMovies != null) {
+            outState.putParcelableArrayList(MOVIES_KEY, mMovies);
+        }
+        super.onSaveInstanceState(outState);
+    }
+
+    private boolean isNetworkAvailable() {
+        ConnectivityManager connectivityManager
+                = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
+        return activeNetworkInfo != null && activeNetworkInfo.isConnected();
     }
 
     public class FetchMoviesTask extends AsyncTask<String,Void,List<Movie>> {
@@ -172,7 +301,57 @@ public class MainFragment extends android.support.v4.app.Fragment {
 
         @Override
         protected void onPostExecute(List<Movie> movieList) {
-            updateAdapter(movieList);
+            if (movieList != null) {
+                if (movieGridAdapter != null) {
+                    movieGridAdapter.setData(movieList);
+                }
+                mMovies = new ArrayList<>();
+                mMovies.addAll(movieList);
+            }
+        }
+    }
+
+    public class FetchFavoriteMoviesTask extends AsyncTask<Void, Void, List<Movie>> {
+
+        private Context mContext;
+
+        public FetchFavoriteMoviesTask(Context context) {
+            mContext = context;
+        }
+
+        private List<Movie> getFavoriteMoviesDataFromCursor(Cursor cursor) {
+            List<Movie> results = new ArrayList<>();
+            if (cursor != null && cursor.moveToFirst()) {
+                do {
+                    Movie movie = new Movie(cursor);
+                    results.add(movie);
+                } while (cursor.moveToNext());
+                cursor.close();
+            }
+            return results;
+        }
+
+        @Override
+        protected List<Movie> doInBackground(Void... params) {
+            Cursor cursor = mContext.getContentResolver().query(
+                    MovieContract.MovieEntry.CONTENT_URI,
+                    MOVIE_COLUMNS,
+                    null,
+                    null,
+                    null
+            );
+                return getFavoriteMoviesDataFromCursor(cursor);
+        }
+
+        @Override
+        protected void onPostExecute(List<Movie> movies) {
+            if (movies != null) {
+                if (movieGridAdapter != null) {
+                    movieGridAdapter.setData(movies);
+                }
+                mMovies = new ArrayList<>();
+                mMovies.addAll(movies);
+            }
         }
     }
 }

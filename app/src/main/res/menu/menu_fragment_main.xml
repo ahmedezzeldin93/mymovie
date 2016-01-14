@@ -12,6 +12,10 @@
                 <item android:title="@string/action_sort_by_rating"
                     android:id="@+id/action_sort_by_rating"
                     android:icon="@drawable/rating_icon"/>
+                <item android:title="@string/action_sort_by_favorite"
+                    android:id="@+id/action_sort_by_favorite"
+                    android:icon="@drawable/favorite_icon"
+                    />
             </group>
         </menu>
     </item>
